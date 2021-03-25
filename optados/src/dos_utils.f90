@@ -1149,15 +1149,15 @@ contains
     ! Known Worries: We use local adaptive, fixed and linear variable so that if multiple
     ! are set, it won't always appear to do the linear scheme.
     !-------------------------------------------------------------------------------
-    ! Written by : A J Morris December 2010 Heavliy modified from LinDOS
+    ! Written by : A J Morris December 2010 Heavily modified from LinDOS
     !===============================================================================
     use od_constants, only: sqrt_two
-    use od_algorithms, only: gaussian, algorithms_erf
+    use od_algorithms, only: gaussian, algorithms_erf, fermidirac
     use od_cell, only: kpoint_grid_dim, kpoint_weight, num_kpoints_on_node, recip_lattice
     use od_electronic, only: band_gradient, electrons_per_state, nbands, nspins, band_energy
     use od_parameters, only: adaptive_smearing, fixed_smearing, hybrid_linear &
          &, finite_bin_correction, iprint, dos_nbins, numerical_intdos, hybrid_linear_grad_tol&
-         &, linear_smearing
+         &, post_smearing,post_smearing_scheme
     use od_io, only: stdout, io_error
     use od_comms, only: my_node_id, on_root
 
@@ -1268,11 +1268,13 @@ contains
       end do
     end do
 
-    if (linear .and. (linear_smearing .gt. 0.0_dp)) then
+    ! Post-integration smearing  **** SMEARING_SCHEME CHOICE?
+!    if (linear .and. (linear_smearing .gt. 0.0_dp)) then
+    if (post_smearing_scheme/='none' .and. (post_smearing .gt. 0.0_dp)) then
       if (iprint > 1 .and. on_root) then ! This is to contain the Calculating k-points block
         write (stdout, '(1x,a78)') '+-------------------------------- Smear DOS ---------------------------------+'
       endif
-      ! Post smear the dos with a Guassian
+      ! Post smear the dos with a user-selected smearing scheme (e.g. Gaussian, Fermi-Dirac)
       ! allocate a temporary array
       allocate (dos_smear(dos_nbins, nspins), stat=ierr)
       if (ierr /= 0) call io_error("error in allocating dos_smear")
@@ -1286,10 +1288,19 @@ contains
             if (mod(real(idos, dp), 1000.0_dp) == 0.0_dp) write (stdout, '(1x,a1,a25,i14,a3,i10,a14,1x,a10)') "|",&
            &"Calculating bin ", idos, " of", dos_nbins, " on this node", "<--sDOS |"
           endif
-          do i = 1, dos_nbins
-            dos_smear(idos, is) = dos_smear(idos, is) + dos(i, is)*gaussian(E(idos), linear_smearing, E(i))*delta_bins
-          enddo
-        enddo
+          select case(post_smearing_scheme)
+          case ('gaussian')
+             do i = 1, dos_nbins
+                dos_smear(idos, is) = dos_smear(idos, is) + dos(i, is)*gaussian(E(idos), post_smearing, E(i))*delta_bins
+             enddo
+          case ('fermidirac')
+             do i = 1, dos_nbins
+                dos_smear(idos, is) = dos_smear(idos, is) + dos(i, is)*fermidirac(E(idos), post_smearing, E(i))*delta_bins
+             enddo
+          case default
+             call io_error('Unsupported post-integration smearing scheme: '//trim(adjustl(post_smearing_scheme)))
+          end select
+         enddo
       enddo
       ! copy array back
       dos = dos_smear

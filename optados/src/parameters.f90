@@ -70,7 +70,9 @@ module od_parameters
   logical, public, save :: compute_band_energy
   real(kind=dp), public, save :: adaptive_smearing
   real(kind=dp), public, save :: fixed_smearing
-  real(kind=dp), public, save :: linear_smearing
+  real(kind=dp), public, save :: post_smearing
+  character(len=20), public, save :: post_smearing_scheme
+  
   logical, public, save :: dos_per_volume
   real(kind=dp), public, save :: efermi_user     ! If the user has set efermi in the odi file
   character(len=20), public, save :: efermi_choice   ! Where do we want to get the fermi energy from
@@ -150,6 +152,8 @@ contains
     !local variables
     integer :: i_temp, loop, ierr
     logical :: found
+    logical :: alternative_found
+    real(kind=dp) :: temporary
     character(len=20), allocatable :: task_string(:)
     character(len=20) :: c_string
 
@@ -248,9 +252,30 @@ contains
     fixed_smearing = 0.3_dp ! LinDOS default
     call param_get_keyword('fixed_smearing', found, r_value=fixed_smearing)
 
-    linear_smearing = 0.0_dp
-    call param_get_keyword('linear_smearing', found, r_value=linear_smearing)
+    post_smearing = 0.0_dp
+    post_smearing_scheme = ''
+    
+    call param_get_keyword('post_smearing_scheme', found, c_value=post_smearing_scheme)
 
+    ! Need to support the original keyword "linear_smearing" and the new, more general "post_smearing"
+    ! If linear_smearing is present, default to Gaussian broadening and don't require post_smearing_scheme to be set
+    ! If post_smearing is present, default to no smearing scheme and require post_smearing_scheme to be set
+    call param_get_keyword('post_smearing', found, r_value=post_smearing)
+    call param_get_keyword('linear_smearing', alternative_found, r_value=temporary)
+    if(found.and.alternative_found) then
+       call io_error('Error, setting both post_smearing and linear_smearing keywords is not permitted')
+    else if(alternative_found) then
+       post_smearing = temporary
+       if(post_smearing_scheme=='') post_smearing_scheme='gaussian'
+    end if
+
+    if(post_smearing_scheme=='') post_smearing_scheme='none'
+
+    ! Catch the case that a post-smearing scheme has been specified but without a smearing width being set
+    if(post_smearing_scheme/='NONE'.and.abs(post_smearing)<tiny(1.0_dp)) then
+       post_smearing = 0.3_dp ! NB same default as the fixed broadening width
+    end if
+    
     efermi_user = -990.0_dp
     if (.not. pdis) then
       efermi_choice = "optados"
@@ -697,7 +722,9 @@ contains
     endif
     if (linear) &
       write (stdout, '(1x,a78)') '|  Linear Extrapolation                      :  True                         |'
-    write (stdout, '(1x,a46,1x,1F10.5,20x,a1)') '|  Smearing Width                            :', linear_smearing, '|'
+    write (stdout, '(1x,a46,1x,a,T79,a1)') '|  Post-integration smearing scheme          :', &
+         & trim(adjustl(post_smearing_scheme)), '|'
+    write (stdout, '(1x,a46,1x,1F10.5,20x,a1)') '|  Post-integration smearing width           :', post_smearing, '|'
     if (quad) &
       write (stdout, '(1x,a78)') '|  Quadratic Extrapolation                   :  True                         |'
     if (finite_bin_correction) &
@@ -1488,7 +1515,7 @@ contains
     call comms_bcast(compute_band_gap, 1)
     call comms_bcast(adaptive_smearing, 1)
     call comms_bcast(fixed_smearing, 1)
-    call comms_bcast(linear_smearing, 1)
+    call comms_bcast(post_smearing, 1)
     call comms_bcast(hybrid_linear, 1)
     call comms_bcast(hybrid_linear_grad_tol, 1)
     call comms_bcast(dos_per_volume, 1)

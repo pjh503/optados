@@ -39,6 +39,7 @@ module od_algorithms
   private
 
   public :: gaussian
+  public :: fermidirac
   public :: heap_sort
   public :: utility_lowercase
   public :: utility_cart_to_frac
@@ -89,6 +90,27 @@ contains
     endif
     return
   end function gaussian
+
+!=========================================================================!
+  function fermidirac(m, w, x)
+!=========================================================================!
+! ** Return value of Fermi-Dirac distribution (mean=m,width=w) at position x
+!=========================================================================!
+    implicit none
+
+    real(kind=dp), intent(in) :: m, w, x
+    real(kind=dp)             :: fermidirac
+
+    ! **** GAUSSIAN FOR TESTING **** PJH
+    if (0.5_dp*((x - m)/w)**2 .gt. 30.0_dp) then
+
+      fermidirac = 0.0_dp
+      return
+    else
+      fermidirac = 1.0_dp/(exp(-(x-m)/(2.0_dp*w))+exp((x-m)/(2.0_dp*w)))**2
+    endif
+    return
+  end function fermidirac
 
 !=========================================================================!
   subroutine heap_sort(num_items, weight)
